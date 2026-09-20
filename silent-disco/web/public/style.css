@@ -1,7 +1,4 @@
 :root {
-  /* Channel colors, per CLAUDE.md's table. No green/blue -- the Mood app
-     uses those to mean "come say hi". Matches badge/main/main.c's
-     CHANNELS table. */
   --channel-color: #ff2d8a; /* default: channel 0, pink */
   --bg: #120810;
   --fg: #f5e9f1;

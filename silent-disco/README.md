@@ -54,7 +54,7 @@ The screen shows your channel/BPM and the current segment name. Press
 **Left**/**Right** to cycle Pink/Orange/Purple. Press **Home** to enter
 **Sync check**: while wearing your Bluetooth headphones and listening to
 the web app's click (below), press **Up**/**Down** to nudge the LED flash
-in 10 ms steps until it visually matches the click you hear. The offset is
+in 2 ms steps until it visually matches the click you hear. The offset is
 saved to flash and re-applied on every boot; press **Home** again to exit.
 
 ## Web app

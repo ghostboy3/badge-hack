@@ -38,7 +38,7 @@ static const char *TAG = "badge";
 #define SEARCH_BLINK_PERIOD_MS 1000
 #define SEARCH_BLINK_ON_MS     100
 
-#define LATENCY_STEP_MS 10
+#define LATENCY_STEP_MS 2
 
 typedef struct {
     const char *name;

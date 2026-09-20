@@ -31,7 +31,7 @@ Web server (master clock + track schedule)
 4. **Per-user latency offset.** Bluetooth headphones add ~150-300 ms. The badge has a "Sync check" screen: it flashes while the phone plays a click, and Up/Down nudges the LED offset in 10 ms steps. Store the offset; apply it when rendering the schedule.
 5. **Pre-analyze tracks offline** (librosa/aubio) into a beat grid and energy envelope. No live beat detection from a microphone.
 6. **Channel switching:** badge D-pad Left/Right changes channel and LED color instantly. Phone preloads all 3 tracks, plays them in lockstep at gain 0, and crossfades to the selected one (no resync). Live DJ streams need LEDs delayed by the stream's known latency.
-7. **Channel colors:** pink, orange, purple. Do NOT use green or blue, which the Mood app uses to mean "come say hi".
+7. **Channel colors:** pink, blue and green.
 
 ## Badge constraints (see custom-firmware-hal.md for details)
 
