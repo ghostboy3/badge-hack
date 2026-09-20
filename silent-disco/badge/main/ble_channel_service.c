@@ -18,18 +18,20 @@
 static const char *TAG = "ble_channel_svc";
 
 // docs/follow-badge-protocol.md -- keep byte-for-byte in sync with
-// web/public/client.js's SERVICE_UUID/CHANNEL_CHAR_UUID. NimBLE's
-// BLE_UUID128_INIT takes the bytes in reverse of the dashed string form.
-// Service:                9ac33a43-5fe6-40a9-8a5f-921a1a8933e8
+// web/public/client.js's FOLLOW_SERVICE_UUID/FOLLOW_STATE_CHAR_UUID.
+// NimBLE's BLE_UUID128_INIT takes the bytes in reverse of the dashed
+// string form.
+// Service:            9ac33a43-5fe6-40a9-8a5f-921a1a8933e8
 static const ble_uuid128_t s_svc_uuid = BLE_UUID128_INIT(
     0xe8, 0x33, 0x89, 0x1a, 0x1a, 0x92, 0x5f, 0x8a,
     0xa9, 0x40, 0xe6, 0x5f, 0x43, 0x3a, 0xc3, 0x9a);
-// Channel characteristic:  4e6c2458-d8ee-4401-8b35-41819926f033
+// State characteristic: 4e6c2458-d8ee-4401-8b35-41819926f033
 static const ble_uuid128_t s_chr_uuid = BLE_UUID128_INIT(
     0x33, 0xf0, 0x26, 0x99, 0x81, 0x41, 0x35, 0x8b,
     0x01, 0x44, 0xee, 0xd8, 0x58, 0x24, 0x6c, 0x4e);
 
-static uint8_t s_channel_value;
+// [channel, volume_pct, muted] -- docs/follow-badge-protocol.md.
+static uint8_t s_state[3] = { 0, 70, 0 }; // default: channel 0, 70% volume, unmuted
 static uint16_t s_channel_val_handle;
 static uint16_t s_conn_handle = BLE_HS_CONN_HANDLE_NONE;
 static bool s_subscribed;
@@ -42,7 +44,7 @@ static int channel_access_cb(uint16_t conn_handle, uint16_t attr_handle,
                               struct ble_gatt_access_ctxt *ctxt, void *arg)
 {
     if (ctxt->op == BLE_GATT_ACCESS_OP_READ_CHR) {
-        int rc = os_mbuf_append(ctxt->om, &s_channel_value, sizeof(s_channel_value));
+        int rc = os_mbuf_append(ctxt->om, s_state, sizeof(s_state));
         return rc == 0 ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;
     }
     return BLE_ATT_ERR_UNLIKELY;
@@ -65,12 +67,12 @@ static const struct ble_gatt_svc_def s_gatt_svcs[] = {
     { 0 },
 };
 
-static void notify_channel(void)
+static void notify_state(void)
 {
     if (s_conn_handle == BLE_HS_CONN_HANDLE_NONE || !s_subscribed) {
         return; // no phone connected/subscribed -- nothing to push
     }
-    struct os_mbuf *om = ble_hs_mbuf_from_flat(&s_channel_value, sizeof(s_channel_value));
+    struct os_mbuf *om = ble_hs_mbuf_from_flat(s_state, sizeof(s_state));
     if (om == NULL) {
         ESP_LOGE(TAG, "ble_hs_mbuf_from_flat failed");
         return;
@@ -83,8 +85,15 @@ static void notify_channel(void)
 
 void ble_channel_service_set_channel(uint8_t channel)
 {
-    s_channel_value = channel;
-    notify_channel();
+    s_state[0] = channel;
+    notify_state();
+}
+
+void ble_channel_service_set_volume(uint8_t volume_pct, bool muted)
+{
+    s_state[1] = volume_pct > 100 ? 100 : volume_pct;
+    s_state[2] = muted ? 1 : 0;
+    notify_state();
 }
 
 static int gap_event_cb(struct ble_gap_event *event, void *arg)

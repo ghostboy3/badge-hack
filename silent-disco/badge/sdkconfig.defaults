@@ -40,3 +40,7 @@ CONFIG_BT_NIMBLE_TRANSPORT_ACL_FROM_LL_COUNT=8
 
 # Extended advertising stays off (its default) -- legacy connectable
 # advertising is simpler and sufficient for a single connection.
+
+# Larger display font (display.c uses lv_font_montserrat_20 for legibility;
+# the LVGL default of 14 is the only one built in otherwise).
+CONFIG_LV_FONT_MONTSERRAT_20=y

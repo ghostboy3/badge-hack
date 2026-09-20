@@ -1,12 +1,15 @@
 # Follow my badge (Android Chrome, Web Bluetooth)
 
-Optional feature: the badge exposes its currently-selected channel over a
-tiny BLE GATT service; a phone on Android Chrome can connect via Web
-Bluetooth, subscribe, and switch its own playing channel automatically
-whenever you press Left/Right on the badge. iOS Safari and desktop
-Firefox/Safari have no Web Bluetooth API — manual tap-to-pick (already
-built) is the always-available fallback there and everywhere else; this
-feature is additive, never required, per CLAUDE.md.
+Optional feature: the badge exposes its currently-selected channel, volume
+and mute state over a tiny BLE GATT service; a phone on Android Chrome can
+connect via Web Bluetooth, subscribe, and mirror all three automatically —
+switch channel on Left/Right, scale playback gain on Up/Down, mute on A.
+The badge has no speaker of its own (per CLAUDE.md: "Audio never goes
+through the badge"), so Up/Down/A only ever mean anything to a phone
+that's actively following. iOS Safari and desktop Firefox/Safari have no
+Web Bluetooth API — manual tap-to-pick (already built) is the
+always-available fallback there and everywhere else; this feature is
+additive, never required, per CLAUDE.md.
 
 This is a completely separate BLE protocol from the old beat-broadcast one
 (`docs/packet-format.md`, currently unused by `badge/`) — different role
@@ -21,7 +24,7 @@ Bluetooth SIG UUIDs):
 | | UUID |
 |---|---|
 | Service | `9ac33a43-5fe6-40a9-8a5f-921a1a8933e8` |
-| Channel characteristic | `4e6c2458-d8ee-4401-8b35-41819926f033` |
+| State characteristic | `4e6c2458-d8ee-4401-8b35-41819926f033` |
 
 These are hardcoded identically on both sides — `badge/main/ble_channel_service.c`
 (as a reversed byte array via `BLE_UUID128_INIT`, NimBLE's convention: the
@@ -49,19 +52,32 @@ both and update this table.
   first to check) — so the UUID has to be there, and the name has to go
   somewhere else.
 
-## Channel characteristic
+## State characteristic
 
-- Read + Notify, value = a single `uint8` (0 = Pink, 1 = Orange, 2 =
-  Purple), matching `badge/main/main.c`'s `CHANNELS`/`s_local_channel` and
-  `web/public/client.js`'s `CHANNELS`/`selectedChannel` indices.
+Read + Notify, value = 3 bytes: `[channel, volume_pct, muted]`.
+
+| Byte | Meaning |
+|---|---|
+| 0 | `channel`: `uint8`, 0 = Pink, 1 = Orange, 2 = Purple — matches `badge/main/main.c`'s `CHANNELS`/`s_local_channel` and `web/public/client.js`'s `CHANNELS`/`selectedChannel` indices. |
+| 1 | `volume_pct`: `uint8`, 0-100. Badge-side default 70; adjusted ±10 per Up/Down press, clamped to [0, 100]. Scales the phone's `CHANNEL_GAIN` multiplicatively (`client.js`'s `effectiveGain()`). |
+| 2 | `muted`: `uint8`, 0 or 1. Toggled by the A button. Forces the phone's effective gain to 0 regardless of `volume_pct`. Pressing Up or Down while muted also unmutes (same convention as a phone's hardware volume rocker). |
+
+All three values live in one characteristic/one notification rather than
+three separate ones — deliberately, to keep only a single subscribable
+attribute (`CONFIG_BT_NIMBLE_MAX_CCCDS=1` stays untouched) and a single
+notify call per change, consistent with the memory-conscious design below.
+
 - No pairing, no bonding, no encryption requirement on the characteristic —
-  it's low-stakes (which color someone's badge is showing), and skipping
-  security removes NimBLE's whole SM/crypto stack from the memory budget
-  (see below). Anyone in BLE range who knows the service UUID could in
-  principle read/subscribe to any badge's channel; acceptable for this
+  it's low-stakes (which channel/volume someone's badge is showing), and
+  skipping security removes NimBLE's whole SM/crypto stack from the memory
+  budget (see below). Anyone in BLE range who knows the service UUID could
+  in principle read/subscribe to any badge's state; acceptable for this
   project.
 - The badge only notifies while a client is actively subscribed (tracked
   via `BLE_GAP_EVENT_SUBSCRIBE`) — it doesn't push into a vacuum.
+- On the phone, `masterVolumePct`/`muted` default to `100`/`false` (i.e.
+  full volume, unmuted) until a badge is actually followed — playback is
+  unaffected by this feature unless you connect to a badge.
 
 ## Memory tradeoff: connectionless vs. connectable
 
@@ -105,4 +121,8 @@ still reliable.
    `SilentDisco-XXXX`; pick it.
 4. Press Left/Right on the badge — the phone's channel (color, playlist)
    should switch to match within about a second.
-5. Manual swatch taps on the phone should still work at any time.
+5. Press Up/Down on the badge — the phone's "Volume" stat and actual
+   playback loudness should step by 10%. Press A — playback should mute;
+   press A again, or Up/Down, to unmute.
+6. Manual swatch taps on the phone should still work at any time,
+   independent of whether you're following a badge.

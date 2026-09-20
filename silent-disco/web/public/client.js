@@ -27,7 +27,7 @@
   // docs/follow-badge-protocol.md -- keep in sync with
   // badge/main/ble_channel_service.c's s_svc_uuid/s_chr_uuid.
   const FOLLOW_SERVICE_UUID = '9ac33a43-5fe6-40a9-8a5f-921a1a8933e8';
-  const FOLLOW_CHANNEL_CHAR_UUID = '4e6c2458-d8ee-4401-8b35-41819926f033';
+  const FOLLOW_STATE_CHAR_UUID = '4e6c2458-d8ee-4401-8b35-41819926f033';
 
   // Matches badge/main/main.c's CHANNELS table for color/name; the badge
   // renders color+LEDs, we render audio -- index order also matches
@@ -48,6 +48,7 @@
   const statTrack = document.getElementById('stat-track');
   const statOffset = document.getElementById('stat-offset');
   const statRtt = document.getElementById('stat-rtt');
+  const statVolume = document.getElementById('stat-volume');
   const followBtn = document.getElementById('follow-badge');
   const followStatusEl = document.getElementById('follow-status');
 
@@ -70,6 +71,13 @@
   let currentTrack = [];
   let selectedChannel = 0;
   let playing = false;
+
+  // Master volume/mute -- only ever set by the badge over Web Bluetooth
+  // (docs/follow-badge-protocol.md); no local UI for it, since the badge
+  // has no speaker of its own to be "the" volume of. Defaults to full/
+  // unmuted so playback is unaffected until you actually follow a badge.
+  let masterVolumePct = 100;
+  let muted = false;
 
   function setStatus(text) {
     statusEl.textContent = text;
@@ -186,6 +194,11 @@
     }
   }
 
+  // CHANNEL_GAIN scaled by the badge-controlled master volume, or 0 if muted.
+  function effectiveGain() {
+    return muted ? 0 : CHANNEL_GAIN * (masterVolumePct / 100);
+  }
+
   function selectChannel(channel) {
     if (channel === selectedChannel) return;
 
@@ -193,7 +206,7 @@
     channelGains[selectedChannel].gain.cancelScheduledValues(now);
     channelGains[selectedChannel].gain.linearRampToValueAtTime(0, now + CROSSFADE_S);
     channelGains[channel].gain.cancelScheduledValues(now);
-    channelGains[channel].gain.linearRampToValueAtTime(CHANNEL_GAIN, now + CROSSFADE_S);
+    channelGains[channel].gain.linearRampToValueAtTime(effectiveGain(), now + CROSSFADE_S);
 
     selectedChannel = channel;
     document.body.dataset.channel = String(channel);
@@ -202,6 +215,22 @@
     for (const btn of channelBtns) {
       btn.classList.toggle('selected', Number(btn.dataset.channel) === channel);
     }
+  }
+
+  function updateVolumeDisplay() {
+    statVolume.textContent = muted ? 'Muted' : `${masterVolumePct}%`;
+  }
+
+  // Re-ramps whichever channel is currently audible to the latest
+  // effectiveGain() -- called when the badge reports a new volume/mute
+  // state. Only meaningful once joined (audioCtx/gain nodes exist).
+  function applyVolumeToSelectedChannel() {
+    updateVolumeDisplay();
+    if (!playing) return;
+    const now = audioCtx.currentTime;
+    const gain = channelGains[selectedChannel].gain;
+    gain.cancelScheduledValues(now);
+    gain.linearRampToValueAtTime(effectiveGain(), now + CROSSFADE_S);
   }
 
   // Drives the pulse circle from the actually-audible channel's real audio
@@ -234,18 +263,24 @@
     followStatusEl.hidden = !text;
   }
 
-  // Applies a channel index received from the badge. If we haven't joined
-  // yet (no AudioContext/gain nodes), selectChannel() would have nothing
-  // to crossfade -- just remember the choice for when Join is tapped.
-  function applyChannelFromBadge(channel) {
-    if (!Number.isInteger(channel) || channel < 0 || channel >= CHANNELS.length) {
-      return;
+  // Applies badge state -- [channel, volume_pct, muted], see
+  // docs/follow-badge-protocol.md. If we haven't joined yet (no
+  // AudioContext/gain nodes), selectChannel()/applyVolumeToSelectedChannel()
+  // would have nothing to crossfade -- just remember the values for when
+  // Join is tapped.
+  function applyBadgeState(value) {
+    const channel = value.getUint8(0);
+    masterVolumePct = value.getUint8(1);
+    muted = value.getUint8(2) !== 0;
+
+    if (Number.isInteger(channel) && channel >= 0 && channel < CHANNELS.length) {
+      if (playing) {
+        selectChannel(channel);
+      } else {
+        selectedChannel = channel;
+      }
     }
-    if (playing) {
-      selectChannel(channel);
-    } else {
-      selectedChannel = channel;
-    }
+    applyVolumeToSelectedChannel();
   }
 
   async function followBadge() {
@@ -260,13 +295,13 @@
 
       const server = await device.gatt.connect();
       const service = await server.getPrimaryService(FOLLOW_SERVICE_UUID);
-      const characteristic = await service.getCharacteristic(FOLLOW_CHANNEL_CHAR_UUID);
+      const characteristic = await service.getCharacteristic(FOLLOW_STATE_CHAR_UUID);
 
       const initial = await characteristic.readValue();
-      applyChannelFromBadge(initial.getUint8(0));
+      applyBadgeState(initial);
 
       characteristic.addEventListener('characteristicvaluechanged', (event) => {
-        applyChannelFromBadge(event.target.value.getUint8(0));
+        applyBadgeState(event.target.value);
       });
       await characteristic.startNotifications();
 
@@ -308,11 +343,12 @@
     }
     await audioCtx.resume();
 
-    channelGains[selectedChannel].gain.value = CHANNEL_GAIN;
+    channelGains[selectedChannel].gain.value = effectiveGain();
     document.body.dataset.channel = String(selectedChannel);
     channelBtns[selectedChannel].classList.add('selected');
     statChannel.textContent = CHANNELS[selectedChannel].name;
     channelsEl.hidden = false;
+    updateVolumeDisplay();
 
     for (let i = 0; i < channels.length; i++) {
       startChannelPlayback(i);

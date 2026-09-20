@@ -97,6 +97,12 @@ lv_display_t *display_init(void)
 
         s_label = lv_label_create(screen);
         lv_obj_set_style_text_color(s_label, lv_color_white(), 0);
+        lv_obj_set_style_text_font(s_label, &lv_font_montserrat_20, 0);
+        // Constrained width + wrap so the larger font can't run text off
+        // the edge of the screen -- it wraps to more lines instead.
+        lv_obj_set_width(s_label, LCD_H_RES - 20);
+        lv_label_set_long_mode(s_label, LV_LABEL_LONG_MODE_WRAP);
+        lv_obj_set_style_text_align(s_label, LV_TEXT_ALIGN_CENTER, 0);
         lv_obj_center(s_label);
         lvgl_port_unlock();
     }

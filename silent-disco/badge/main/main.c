@@ -14,8 +14,10 @@
  * badge just doesn't consume it anymore.
  *
  * BLE is back, though, in a different role: ble_channel_service.c runs a
- * connectable GATT peripheral exposing the current channel so a phone can
- * optionally "follow" it (docs/follow-badge-protocol.md).
+ * connectable GATT peripheral exposing the current channel, volume and
+ * mute state so a phone can optionally "follow" it
+ * (docs/follow-badge-protocol.md). The badge has no speaker itself --
+ * Up/Down/A only ever mean anything to a phone that's actively following.
  */
 #include <stdio.h>
 #include "freertos/FreeRTOS.h"
@@ -42,6 +44,9 @@ typedef struct {
 
 #define CHANNEL_COUNT 3
 
+#define VOLUME_STEP_PCT    10
+#define DEFAULT_VOLUME_PCT 70 // matches ble_channel_service.c's initial state
+
 // Pink/orange/purple, per CLAUDE.md's channel color table -- no green/blue
 // (reserved by the Mood app). Kept modest per custom-firmware-hal.md's
 // brownout warning for 6 LEDs at once.
@@ -53,6 +58,8 @@ static const channel_def_t CHANNELS[CHANNEL_COUNT] = {
 
 static bool s_display_ok;
 static volatile uint8_t s_local_channel; // written by ui_task (Left/Right), read by led_render_task
+static uint8_t s_volume_pct = DEFAULT_VOLUME_PCT; // Up/Down; only ui_task touches these, no cross-task read
+static bool s_muted;
 
 // Triangle wave 0..1000..0 (parts-per-thousand) over BREATHE_PERIOD_MS,
 // mapped onto [BREATHE_MIN_PCT, BREATHE_MAX_PCT]. Pure integer math.
@@ -93,8 +100,15 @@ static void render_display(void)
         return;
     }
     const channel_def_t *ch = &CHANNELS[s_local_channel];
-    char text[64];
-    snprintf(text, sizeof(text), "Silent Disco\n%s (CH%u)\nLeft/Right: channel", ch->name, s_local_channel);
+    char vol_text[16];
+    if (s_muted) {
+        snprintf(vol_text, sizeof(vol_text), "Muted");
+    } else {
+        snprintf(vol_text, sizeof(vol_text), "Vol: %u%%", s_volume_pct);
+    }
+    char text[96];
+    snprintf(text, sizeof(text), "Silent Disco\n%s (CH%u)  %s\nLeft/Right:ch Up/Dn:vol A:mute",
+             ch->name, s_local_channel, vol_text);
     display_show_text(text);
 }
 
@@ -114,6 +128,20 @@ static void ui_task(void *arg)
             s_local_channel = (s_local_channel + 1) % CHANNEL_COUNT;
             render_display();
             ble_channel_service_set_channel(s_local_channel);
+        } else if (button_was_pressed(BUTTON_UP)) {
+            s_muted = false; // volume buttons unmute, same as a phone's hardware volume rocker
+            s_volume_pct = (s_volume_pct + VOLUME_STEP_PCT > 100) ? 100 : s_volume_pct + VOLUME_STEP_PCT;
+            render_display();
+            ble_channel_service_set_volume(s_volume_pct, s_muted);
+        } else if (button_was_pressed(BUTTON_DOWN)) {
+            s_muted = false;
+            s_volume_pct = (s_volume_pct < VOLUME_STEP_PCT) ? 0 : s_volume_pct - VOLUME_STEP_PCT;
+            render_display();
+            ble_channel_service_set_volume(s_volume_pct, s_muted);
+        } else if (button_was_pressed(BUTTON_A)) {
+            s_muted = !s_muted;
+            render_display();
+            ble_channel_service_set_volume(s_volume_pct, s_muted);
         }
 
         vTaskDelay(pdMS_TO_TICKS(10));
