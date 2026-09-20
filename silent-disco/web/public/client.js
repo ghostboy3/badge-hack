@@ -1,27 +1,33 @@
-// Silent Disco phone client -- steps 2 & 4a. See docs/web-sync-protocol.md
-// for the wire protocol and offset-estimation algorithm.
+// Silent Disco phone client. See docs/web-sync-protocol.md for the wire
+// protocol, offset-estimation algorithm, and playlist-position math.
 //
-// Step 4a (three channels): CLAUDE.md says the phone "preloads all 3
+// Three channels (CLAUDE.md rule 6), each a real playlist ("preloads all 3
 // tracks, plays them in lockstep at gain 0, and crossfades to the selected
-// one (no resync)". There are no real tracks yet (that's the lookahead
-// pattern schedule, the next build-order step) -- each channel is a
-// distinct synthesized tone standing in for its track, but the lockstep +
-// per-channel gain node + crossfade structure is the real thing: every
-// channel is scheduled on every beat, only the selected one is audible.
+// one -- no resync"): one <audio> element per channel, all three playing
+// continuously from the moment you join (muted except the selected one),
+// each independently advancing through its own playlist and recomputing
+// its position from the server clock on every track boundary. Switching
+// channels is *only* a gain crossfade -- the non-selected channels were
+// already correctly positioned in the background.
+//
+// Playback isn't quantized to a beat grid at all (that only matters for
+// the BLE/LED side, badge/main/*, which is unrelated -- see
+// docs/web-sync-protocol.md's "known gap"). Cross-phone sync is limited to
+// "which track + what position," reusing the same clock-offset estimate
+// this file already computed for that.
 (() => {
   const PING_INTERVAL_MS = 1000;
   const SAMPLE_WINDOW_MS = 10000; // trailing window for the lowest-RTT filter
-  const LOOKAHEAD_MS = 200;       // schedule beats this far ahead of "now"
-  const PULSE_WIDTH_MS = 90;      // visual pulse duration, mirrors the badge's LED flash
   const CROSSFADE_S = 0.12;       // channel-switch gain ramp
   const CHANNEL_GAIN = 0.5;
 
-  // Matches badge/main/main.c's CHANNELS table (name + color; the badge
-  // renders color, we render a distinct placeholder tone per channel).
+  // Matches badge/main/main.c's CHANNELS table for color/name; the badge
+  // renders color+LEDs, we render audio -- index order also matches
+  // server.js's CHANNEL_DIRS (['pink', 'orange', 'purple']).
   const CHANNELS = [
-    { name: 'Pink', freq: 880 },
-    { name: 'Orange', freq: 587 },
-    { name: 'Purple', freq: 1175 },
+    { name: 'Pink' },
+    { name: 'Orange' },
+    { name: 'Purple' },
   ];
 
   const statusEl = document.getElementById('status');
@@ -31,23 +37,29 @@
   const channelBtns = [...document.querySelectorAll('.channel-btn')];
   const statsEl = document.getElementById('stats');
   const statChannel = document.getElementById('stat-channel');
-  const statBpm = document.getElementById('stat-bpm');
+  const statTrack = document.getElementById('stat-track');
   const statOffset = document.getElementById('stat-offset');
   const statRtt = document.getElementById('stat-rtt');
 
-  let bpm = null;
-  let beatEpochMs = null;
+  /** @type {{playlist: {url: string, title: string, durationSec: number}[]}[]} */
+  let channels = [];
+  let playlistEpochMs = null;
 
   /** @type {{offset: number, rtt: number, time: number}[]} */
   let samples = [];
   let offsetEstimate = 0;
 
   let audioCtx = null;
-  /** @type {GainNode[]} one per channel, all connected to destination */
+  let analyser = null;
+  let pulseData = null;
+  /** @type {HTMLAudioElement[]} */
+  let audioEls = [];
+  /** @type {GainNode[]} one per channel, all routed through `analyser` to destination */
   let channelGains = [];
+  /** @type {({url,title,durationSec}|null)[]} currently-playing track per channel, for display */
+  let currentTrack = [];
   let selectedChannel = 0;
   let playing = false;
-  let nextBeatIndex = null; // next not-yet-scheduled beat number
 
   function setStatus(text) {
     statusEl.textContent = text;
@@ -72,6 +84,55 @@
     statRtt.textContent = `${best.rtt.toFixed(1)} ms`;
   }
 
+  // Where in its playlist channel `channels[i]` should be right now, given
+  // `serverNow` -- the whole playlist loops forever from playlistEpochMs.
+  // Returns null if the channel has no tracks yet (empty folder).
+  function computePosition(channel, serverNow) {
+    const total = channel.playlist.reduce((s, t) => s + t.durationSec, 0);
+    if (total <= 0) return null;
+
+    let elapsed = ((serverNow - playlistEpochMs) / 1000) % total;
+    if (elapsed < 0) elapsed += total;
+
+    for (let i = 0; i < channel.playlist.length; i++) {
+      const dur = channel.playlist[i].durationSec;
+      if (elapsed < dur) return { trackIndex: i, offsetSec: elapsed };
+      elapsed -= dur;
+    }
+    return { trackIndex: 0, offsetSec: 0 }; // floating-point rounding fallback
+  }
+
+  function updateNowPlayingDisplay() {
+    const track = currentTrack[selectedChannel];
+    statTrack.textContent = track ? track.title : 'No tracks yet';
+  }
+
+  // (Re)starts channel `i` at wherever computePosition says it should be
+  // right now. Used both on join and as the `ended` handler -- recomputing
+  // fresh from the server clock on every track boundary self-corrects any
+  // drift instead of needing continuous mid-track re-sync.
+  function startChannelPlayback(i) {
+    const channel = channels[i];
+    const pos = computePosition(channel, serverTimeNow());
+    currentTrack[i] = pos ? channel.playlist[pos.trackIndex] : null;
+    if (i === selectedChannel) updateNowPlayingDisplay();
+
+    const audioEl = audioEls[i];
+    if (!pos) {
+      audioEl.pause();
+      audioEl.removeAttribute('src');
+      return;
+    }
+
+    const track = channel.playlist[pos.trackIndex];
+    audioEl.addEventListener('loadedmetadata', () => {
+      audioEl.currentTime = pos.offsetSec;
+      audioEl.play().catch((err) => console.error(`channel ${i} play() failed:`, err));
+    }, { once: true });
+    audioEl.src = track.url;
+    audioEl.load();
+  }
+
   function connect() {
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';
     const ws = new WebSocket(`${proto}://${location.host}`);
@@ -82,9 +143,9 @@
       const msg = JSON.parse(event.data);
 
       if (msg.type === 'hello') {
-        bpm = msg.bpm;
-        beatEpochMs = msg.beatEpochMs;
-        statBpm.textContent = String(bpm);
+        playlistEpochMs = msg.playlistEpochMs;
+        channels = msg.channels;
+        currentTrack = channels.map(() => null);
         statsEl.hidden = false;
 
         // First ping immediately, then steady interval.
@@ -115,24 +176,6 @@
     }
   }
 
-  function playClick(channel, audioTime) {
-    const osc = audioCtx.createOscillator();
-    const gain = audioCtx.createGain();
-    osc.type = 'sine';
-    osc.frequency.value = CHANNELS[channel].freq;
-    gain.gain.setValueAtTime(0.0001, audioTime);
-    gain.gain.exponentialRampToValueAtTime(0.5, audioTime + 0.005);
-    gain.gain.exponentialRampToValueAtTime(0.0001, audioTime + 0.08);
-    osc.connect(gain).connect(channelGains[channel]);
-    osc.start(audioTime);
-    osc.stop(audioTime + 0.1);
-  }
-
-  function pulseVisual(onMs) {
-    pulseEl.classList.add('on');
-    setTimeout(() => pulseEl.classList.remove('on'), onMs);
-  }
-
   function selectChannel(channel) {
     if (channel === selectedChannel) return;
 
@@ -145,42 +188,31 @@
     selectedChannel = channel;
     document.body.dataset.channel = String(channel);
     statChannel.textContent = CHANNELS[channel].name;
+    updateNowPlayingDisplay();
     for (const btn of channelBtns) {
       btn.classList.toggle('selected', Number(btn.dataset.channel) === channel);
     }
   }
 
-  function schedulerTick() {
+  // Drives the pulse circle from the actually-audible channel's real audio
+  // (via `analyser`, fed by all channel gain nodes) instead of a beat grid.
+  function pulseTick() {
     if (!playing) return;
 
-    const beatPeriodMs = 60000 / bpm;
-    const now = serverTimeNow();
-
-    if (nextBeatIndex === null || beatEpochMs + nextBeatIndex * beatPeriodMs < now - beatPeriodMs) {
-      // First run, or we fell far behind (e.g. the tab was backgrounded and
-      // rAF paused) -- resync to the current beat instead of bursting
-      // through every beat that was missed.
-      nextBeatIndex = Math.ceil((now - beatEpochMs) / beatPeriodMs);
+    analyser.getByteTimeDomainData(pulseData);
+    let sumSquares = 0;
+    for (let i = 0; i < pulseData.length; i++) {
+      const v = (pulseData[i] - 128) / 128;
+      sumSquares += v * v;
     }
+    const rms = Math.sqrt(sumSquares / pulseData.length); // ~0 (silence) .. ~1 (loud)
+    const loudness = Math.min(1, rms * 4); // headroom so quieter tracks still read as visible motion
 
-    while (true) {
-      const beatServerTime = beatEpochMs + nextBeatIndex * beatPeriodMs;
-      const msUntilBeat = beatServerTime - now;
-      if (msUntilBeat > LOOKAHEAD_MS) break;
+    pulseEl.style.opacity = String(0.25 + 0.75 * loudness);
+    pulseEl.style.transform = `scale(${0.85 + 0.2 * loudness})`;
+    pulseEl.classList.toggle('on', loudness > 0.5);
 
-      const audioTime = audioCtx.currentTime + msUntilBeat / 1000;
-      // All 3 channels are scheduled every beat ("in lockstep"); only the
-      // selected channel's gain node is actually audible.
-      for (let ch = 0; ch < CHANNELS.length; ch++) {
-        playClick(ch, audioTime);
-      }
-      if (msUntilBeat >= 0) {
-        setTimeout(() => pulseVisual(PULSE_WIDTH_MS), Math.max(0, msUntilBeat));
-      }
-      nextBeatIndex++;
-    }
-
-    requestAnimationFrame(schedulerTick);
+    requestAnimationFrame(pulseTick);
   }
 
   channelBtns.forEach((btn) => {
@@ -190,12 +222,23 @@
   joinBtn.addEventListener('click', async () => {
     if (!audioCtx) {
       audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-      channelGains = CHANNELS.map(() => {
-        const g = audioCtx.createGain();
-        g.gain.value = 0;
-        g.connect(audioCtx.destination);
-        return g;
-      });
+      analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 256;
+      analyser.connect(audioCtx.destination);
+      pulseData = new Uint8Array(analyser.frequencyBinCount);
+
+      for (let i = 0; i < channels.length; i++) {
+        const audioEl = new Audio();
+        audioEl.preload = 'auto';
+        audioEl.addEventListener('ended', () => startChannelPlayback(i));
+
+        const gain = audioCtx.createGain();
+        gain.gain.value = 0;
+        audioCtx.createMediaElementSource(audioEl).connect(gain).connect(analyser);
+
+        audioEls[i] = audioEl;
+        channelGains[i] = gain;
+      }
     }
     await audioCtx.resume();
 
@@ -205,11 +248,14 @@
     statChannel.textContent = CHANNELS[selectedChannel].name;
     channelsEl.hidden = false;
 
+    for (let i = 0; i < channels.length; i++) {
+      startChannelPlayback(i);
+    }
+
     playing = true;
-    nextBeatIndex = null;
     joinBtn.hidden = true;
     setStatus('Playing.');
-    requestAnimationFrame(schedulerTick);
+    requestAnimationFrame(pulseTick);
   });
 
   connect();

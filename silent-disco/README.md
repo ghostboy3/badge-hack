@@ -6,7 +6,8 @@ one 120 BPM timeline (per-channel tempo is future work):
 1. A beacon badge broadcasts a beat schedule over BLE; a receiver badge
    pulses its LEDs in time.
 2. A web app holds a master clock; phones sync to it over WebSocket and
-   schedule Web Audio playback.
+   play a real playlist per channel, staying in sync on track/position
+   (not a beat grid — see below).
 3. The badge has a "Sync check" screen to nudge its own LED timing against
    a wearer's Bluetooth headphone latency.
 4. Three channels with colors (pink/orange/purple), selected purely locally
@@ -53,9 +54,12 @@ offsets in `docs/measurements.md`.
 The screen shows your channel/BPM and the current segment name. Press
 **Left**/**Right** to cycle Pink/Orange/Purple. Press **Home** to enter
 **Sync check**: while wearing your Bluetooth headphones and listening to
-the web app's click (below), press **Up**/**Down** to nudge the LED flash
-in 2 ms steps until it visually matches the click you hear. The offset is
-saved to flash and re-applied on every boot; press **Home** again to exit.
+the web app (below), press **Up**/**Down** to nudge the LED flash in 2 ms
+steps until it visually matches what you hear. The offset is saved to
+flash and re-applied on every boot; press **Home** again to exit. Note the
+badge's beat and the web app's playlist are independent timelines (see
+`docs/web-sync-protocol.md`'s "known gap"), so this is about eyeballing
+*a* consistent rhythm, not a guaranteed phase match to any specific track.
 
 ## Web app
 
@@ -65,8 +69,7 @@ npm install
 npm start   # listens on :3000
 ```
 
-See `web/README.md`. Note the phone's beat grid and the beacon's beat grid
-are independent anchors in step 2 -- not yet phase-aligned with each other;
-see `docs/web-sync-protocol.md`'s "known gap." Tap a color swatch after
-joining to switch channels (crossfades, no resync) -- there are no real
-tracks yet, each channel is a distinct placeholder tone.
+See `web/README.md` for how to add music (drop files into
+`web/public/audio/<color>/`, nothing to configure). Tap a color swatch
+after joining to switch channels (crossfades, no resync). Ships with no
+audio committed — every channel plays silence until you add tracks.

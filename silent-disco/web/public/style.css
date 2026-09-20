@@ -34,15 +34,13 @@ main {
   margin: 0 auto 24px;
   border-radius: 50%;
   background: var(--channel-color);
-  opacity: 0.25;
+  opacity: 0.25;  /* idle, pre-join value -- client.js drives this inline once playing (audio-reactive) */
   transform: scale(0.85);
-  transition: opacity 60ms linear, transform 60ms linear;
+  transition: opacity 60ms linear, transform 60ms linear; /* smooths the per-frame inline updates */
 }
 
 .pulse.on {
-  opacity: 1;
-  transform: scale(1);
-  box-shadow: 0 0 40px var(--channel-color);
+  box-shadow: 0 0 40px var(--channel-color); /* extra glow above a loudness threshold */
 }
 
 h1 { margin: 0 0 8px; font-weight: 600; }
