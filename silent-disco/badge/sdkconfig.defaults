@@ -6,7 +6,37 @@ CONFIG_PARTITION_TABLE_CUSTOM=y
 CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
 CONFIG_PARTITION_TABLE_FILENAME="partitions.csv"
 
-# NimBLE, extended scan only (this side never advertises).
+# BLE, connectable GATT peripheral for "follow my badge"
+# (docs/follow-badge-protocol.md) -- NOT the old connectionless-broadcast
+# tuning custom-firmware-hal.md describes; a real connection needs a
+# different memory shape. Trimmed as far as this single-connection,
+# low-traffic, no-pairing use case allows -- see
+# docs/follow-badge-protocol.md's "Memory tradeoff" table for what each of
+# these saves and what to try next if it doesn't fit on real hardware.
 CONFIG_BT_ENABLED=y
 CONFIG_BT_NIMBLE_ENABLED=y
-CONFIG_BT_NIMBLE_EXT_ADV=y
+
+# Peripheral only -- the badge never scans or connects out.
+CONFIG_BT_NIMBLE_ROLE_CENTRAL=n
+CONFIG_BT_NIMBLE_ROLE_OBSERVER=n
+
+# No pairing/bonding needed for an open, low-stakes value -- this is the
+# single biggest memory win, since default=y pulls in the whole security
+# manager + mbedTLS crypto stack.
+CONFIG_BT_NIMBLE_SECURITY_ENABLE=n
+
+# One phone follows one badge; a 1-byte value needs no MTU negotiation
+# headroom; one CCCD to save (our one notifiable characteristic).
+CONFIG_BT_NIMBLE_MAX_CONNECTIONS=1
+CONFIG_BT_NIMBLE_ATT_PREFERRED_MTU=23
+CONFIG_BT_NIMBLE_MAX_CCCDS=1
+
+# Controller-level activity count (828 bytes/instance per its own Kconfig
+# help) -- 2 covers 1 adv instance + 1 connection, nothing more needed.
+CONFIG_BT_CTRL_BLE_MAX_ACT=2
+
+# Traffic is one infrequent 1-byte notify, not a throughput workload.
+CONFIG_BT_NIMBLE_TRANSPORT_ACL_FROM_LL_COUNT=8
+
+# Extended advertising stays off (its default) -- legacy connectable
+# advertising is simpler and sufficient for a single connection.

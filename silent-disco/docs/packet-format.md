@@ -1,5 +1,14 @@
 # Beacon packet format
 
+> **Currently unused by `badge/`.** The badge dropped BLE/beat sync in
+> favor of a standalone breathing-fade light show (see the root
+> `README.md`); this format is only implemented by `beacon/` now, which
+> still broadcasts it correctly. Kept here in case a receiver consumes it
+> again later. The badge does have BLE again for an unrelated reason —
+> `docs/follow-badge-protocol.md`'s "Follow my badge" GATT service, a
+> different protocol entirely (connectable peripheral, not connectionless
+> broadcast) with its own UUIDs and its own memory-tuning tradeoffs.
+
 Wire format shared by `beacon/` (sender) and `badge/` (receiver) via the
 `beacon_packet/` component (`beacon_packet/include/beacon_packet.h`). Badge
 and beacon must never diverge on this — that's why it lives in one shared

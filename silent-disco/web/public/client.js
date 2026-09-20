@@ -1,5 +1,8 @@
 // Silent Disco phone client. See docs/web-sync-protocol.md for the wire
-// protocol, offset-estimation algorithm, and playlist-position math.
+// protocol, offset-estimation algorithm, and playlist-position math, and
+// docs/follow-badge-protocol.md for the optional "Follow my badge" Web
+// Bluetooth feature (Android Chrome only -- feature-detected below, never
+// required; manual channel taps always work regardless).
 //
 // Three channels (CLAUDE.md rule 6), each a real playlist ("preloads all 3
 // tracks, plays them in lockstep at gain 0, and crossfades to the selected
@@ -21,6 +24,11 @@
   const CROSSFADE_S = 0.12;       // channel-switch gain ramp
   const CHANNEL_GAIN = 0.5;
 
+  // docs/follow-badge-protocol.md -- keep in sync with
+  // badge/main/ble_channel_service.c's s_svc_uuid/s_chr_uuid.
+  const FOLLOW_SERVICE_UUID = '9ac33a43-5fe6-40a9-8a5f-921a1a8933e8';
+  const FOLLOW_CHANNEL_CHAR_UUID = '4e6c2458-d8ee-4401-8b35-41819926f033';
+
   // Matches badge/main/main.c's CHANNELS table for color/name; the badge
   // renders color+LEDs, we render audio -- index order also matches
   // server.js's CHANNEL_DIRS (['pink', 'orange', 'purple']).
@@ -40,6 +48,8 @@
   const statTrack = document.getElementById('stat-track');
   const statOffset = document.getElementById('stat-offset');
   const statRtt = document.getElementById('stat-rtt');
+  const followBtn = document.getElementById('follow-badge');
+  const followStatusEl = document.getElementById('follow-status');
 
   /** @type {{playlist: {url: string, title: string, durationSec: number}[]}[]} */
   let channels = [];
@@ -218,6 +228,62 @@
   channelBtns.forEach((btn) => {
     btn.addEventListener('click', () => selectChannel(Number(btn.dataset.channel)));
   });
+
+  function setFollowStatus(text) {
+    followStatusEl.textContent = text;
+    followStatusEl.hidden = !text;
+  }
+
+  // Applies a channel index received from the badge. If we haven't joined
+  // yet (no AudioContext/gain nodes), selectChannel() would have nothing
+  // to crossfade -- just remember the choice for when Join is tapped.
+  function applyChannelFromBadge(channel) {
+    if (!Number.isInteger(channel) || channel < 0 || channel >= CHANNELS.length) {
+      return;
+    }
+    if (playing) {
+      selectChannel(channel);
+    } else {
+      selectedChannel = channel;
+    }
+  }
+
+  async function followBadge() {
+    try {
+      setFollowStatus('Choose your badge…');
+      const device = await navigator.bluetooth.requestDevice({
+        filters: [{ services: [FOLLOW_SERVICE_UUID] }],
+      });
+      device.addEventListener('gattserverdisconnected', () => {
+        setFollowStatus('Badge disconnected.');
+      });
+
+      const server = await device.gatt.connect();
+      const service = await server.getPrimaryService(FOLLOW_SERVICE_UUID);
+      const characteristic = await service.getCharacteristic(FOLLOW_CHANNEL_CHAR_UUID);
+
+      const initial = await characteristic.readValue();
+      applyChannelFromBadge(initial.getUint8(0));
+
+      characteristic.addEventListener('characteristicvaluechanged', (event) => {
+        applyChannelFromBadge(event.target.value.getUint8(0));
+      });
+      await characteristic.startNotifications();
+
+      setFollowStatus(`Following ${device.name || 'your badge'}.`);
+    } catch (err) {
+      console.error('follow my badge failed:', err);
+      setFollowStatus('Could not connect to a badge.');
+    }
+  }
+
+  // Web Bluetooth is Android Chrome only (no iOS Safari, no desktop
+  // Firefox/Safari) -- feature-detected, and the button stays hidden
+  // everywhere else. Manual channel taps above always work regardless.
+  if ('bluetooth' in navigator) {
+    followBtn.hidden = false;
+    followBtn.addEventListener('click', followBadge);
+  }
 
   joinBtn.addEventListener('click', async () => {
     if (!audioCtx) {

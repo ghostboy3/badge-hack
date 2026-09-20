@@ -1,10 +1,15 @@
 # Measurements
 
-Per `CLAUDE.md`'s working agreements: measure, don't assume. Record
-inter-badge and audio-to-light offset results here as they're taken.
-Targets: ~10-20 ms between badges.
+The current badge (`badge/`) doesn't sync to anything — it's a standalone
+breathing-fade light show, so there's nothing to measure an offset against.
 
-## Step 1: badge LED sync to fixed 120 BPM beacon
+The tables below were for the earlier beat-synced badge design (BLE beacon
+-> badge LED flash, and a per-headphone Sync check offset), which no longer
+applies to the current badge build. `beacon/` still works standalone if
+that design comes back later; keeping the method notes here for that case.
+No data was ever recorded in either table.
+
+## Badge LED sync to fixed 120 BPM beacon (not applicable to the current badge)
 
 | Date | Setup (distance, obstructions, # badges) | Measured offset (ms) | Method | Notes |
 |---|---|---|---|---|
@@ -19,12 +24,11 @@ Method notes:
 - Also record behavior when the beacon is power-cycled mid-run (should
   re-anchor within a few seconds, no visible glitch beforehand).
 
-## Step 3: per-badge Sync check offsets
+## Per-badge Sync check offsets (feature removed)
 
-The nudge from `docs/packet-format.md`'s badge firmware, dialed in per
-headphone model via the Sync check screen (Home to enter, Up/Down to
-adjust). Bluetooth audio latency is fairly consistent per headphone model,
-so this table doubles as a reference for known models.
+Was dialed in per headphone model via the badge's Sync check screen
+(Home to enter, Up/Down to adjust) -- removed along with the badge's BLE
+beat sync.
 
 | Headphone model | Nudged offset (ms) | Notes |
 |---|---|---|

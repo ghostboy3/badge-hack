@@ -99,3 +99,18 @@ button:disabled { opacity: 0.4; }
 
 .stats dt { text-align: right; font-weight: 600; }
 .stats dd { text-align: left; margin: 0; }
+
+.follow-btn {
+  font-size: 0.9rem;
+  padding: 8px 18px;
+  background: transparent;
+  border: 1px solid var(--channel-color);
+  color: var(--fg);
+  margin-top: 20px;
+}
+
+.follow-status {
+  margin-top: 8px;
+  font-size: 0.8rem;
+  opacity: 0.7;
+}
