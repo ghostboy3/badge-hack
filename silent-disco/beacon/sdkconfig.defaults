@@ -1,0 +1,11 @@
+# 4 MB flash (module is ESP32-C3-MINI-1-N4). No custom partition table --
+# this project has no persistent storage, the IDF default single-factory-app
+# table is fine.
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+CONFIG_ESPTOOLPY_FLASHSIZE="4MB"
+
+# NimBLE, extended advertising only (this side never scans).
+CONFIG_BT_ENABLED=y
+CONFIG_BT_NIMBLE_ENABLED=y
+CONFIG_BT_NIMBLE_EXT_ADV=y
+CONFIG_BT_NIMBLE_MAX_EXT_ADV_INSTANCES=1

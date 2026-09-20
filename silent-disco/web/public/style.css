@@ -1,0 +1,106 @@
+:root {
+  /* Channel colors, per CLAUDE.md's table. No green/blue -- the Mood app
+     uses those to mean "come say hi". Matches badge/main/main.c's
+     CHANNELS table. */
+  --channel-color: #ff2d8a; /* default: channel 0, pink */
+  --bg: #120810;
+  --fg: #f5e9f1;
+}
+
+body[data-channel="0"] { --channel-color: #ff2d8a; } /* Pink */
+body[data-channel="1"] { --channel-color: #ff8a2d; } /* Orange */
+body[data-channel="2"] { --channel-color: #a12dff; } /* Purple */
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+main {
+  text-align: center;
+  max-width: 360px;
+  width: 100%;
+}
+
+.pulse {
+  width: 140px;
+  height: 140px;
+  margin: 0 auto 24px;
+  border-radius: 50%;
+  background: var(--channel-color);
+  opacity: 0.25;
+  transform: scale(0.85);
+  transition: opacity 60ms linear, transform 60ms linear;
+}
+
+.pulse.on {
+  opacity: 1;
+  transform: scale(1);
+  box-shadow: 0 0 40px var(--channel-color);
+}
+
+h1 { margin: 0 0 8px; font-weight: 600; }
+
+#status { min-height: 1.4em; opacity: 0.85; }
+
+button {
+  font-size: 1.1rem;
+  padding: 12px 28px;
+  border-radius: 999px;
+  border: none;
+  background: var(--channel-color);
+  color: #fff;
+  margin-top: 12px;
+}
+
+button:disabled { opacity: 0.4; }
+
+.channels {
+  display: flex;
+  gap: 14px;
+  justify-content: center;
+  margin-top: 12px;
+}
+
+.channel-btn {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  border: 3px solid transparent;
+  padding: 0;
+  margin: 0;
+  opacity: 0.55;
+  transition: opacity 150ms ease, border-color 150ms ease, transform 150ms ease;
+}
+
+.channel-btn[data-channel="0"] { background: #ff2d8a; }
+.channel-btn[data-channel="1"] { background: #ff8a2d; }
+.channel-btn[data-channel="2"] { background: #a12dff; }
+
+.channel-btn.selected {
+  opacity: 1;
+  border-color: #fff;
+  transform: scale(1.08);
+}
+
+.stats {
+  margin-top: 28px;
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 4px 12px;
+  justify-content: center;
+  font-size: 0.85rem;
+  opacity: 0.7;
+}
+
+.stats dt { text-align: right; font-weight: 600; }
+.stats dd { text-align: left; margin: 0; }

@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Silent Disco</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main>
+    <div id="pulse" class="pulse"></div>
+    <h1>Silent Disco</h1>
+    <p id="status">Connecting&hellip;</p>
+    <button id="join" disabled>Join the disco</button>
+    <div id="channels" class="channels" hidden>
+      <button class="channel-btn" data-channel="0" aria-label="Pink channel"></button>
+      <button class="channel-btn" data-channel="1" aria-label="Orange channel"></button>
+      <button class="channel-btn" data-channel="2" aria-label="Purple channel"></button>
+    </div>
+    <dl id="stats" class="stats" hidden>
+      <dt>Your channel</dt><dd id="stat-channel">&mdash;</dd>
+      <dt>BPM</dt><dd id="stat-bpm">&mdash;</dd>
+      <dt>Clock offset</dt><dd id="stat-offset">&mdash;</dd>
+      <dt>Best RTT</dt><dd id="stat-rtt">&mdash;</dd>
+    </dl>
+  </main>
+  <script src="client.js"></script>
+</body>
+</html>

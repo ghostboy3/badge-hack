@@ -1,0 +1,7 @@
+# Name,   Type, SubType, Offset,  Size, Flags
+# Larger-than-default factory app -- LVGL + esp_lvgl_port + NimBLE already
+# leaves only ~8% of the IDF default 1M app partition free (4 MB flash,
+# module is ESP32-C3-MINI-1-N4).
+nvs,      data, nvs,     ,        0x6000,
+phy_init, data, phy,     ,        0x1000,
+factory,  app,  factory, ,        3M,

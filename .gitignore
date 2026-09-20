@@ -3,6 +3,9 @@ build/
 managed_components/
 sdkconfig.old
 
+# Node
+node_modules/
+
 # OS / editor cruft
 .DS_Store
 Thumbs.db
